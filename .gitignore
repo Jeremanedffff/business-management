@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+*.log
+npm-debug.log*
+
+# Environment � never commit secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+*.crt
+secrets/
+
+# Backup files
+*.bak
+*.bak.*
+
+# Build artifacts / deployment staging
+backend-cpanel-staging/
+*.zip
+*.tsbuildinfo
+project-tree.txt
+zip-check/
+
+# Database dumps — never commit
+*.sql
+!backend/schema.sql
+
+# Accidental shell output artifacts
+ersboituProjectsenterprise-bms
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+!*.env.example

@@ -1,0 +1,15 @@
+import { ReactNode } from "react";
+
+import { usePermission } from "./usePermission";
+
+interface CanProps {
+  permission: string;
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+export function Can({ permission, children, fallback = null }: CanProps) {
+  const allowed = usePermission(permission);
+  return <>{allowed ? children : fallback}</>;
+}
+
