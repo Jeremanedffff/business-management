@@ -18,6 +18,8 @@ class AuditLogResponse(BaseModel):
     old_values: dict | None
     new_values: dict | None
     notes: str | None
+    ip_address: str | None
+    user_agent: str | None
     created_at: datetime
 
 

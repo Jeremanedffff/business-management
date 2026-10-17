@@ -2,18 +2,29 @@ import { PDFDownloadLink } from "@react-pdf/renderer";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { approveInvoice, listInvoices, type Invoice } from "../../api/invoices";
+import {
+  approveInvoice,
+  listAllInvoices,
+  listInvoices,
+  searchInvoices,
+  type Invoice,
+} from "../../api/invoices";
 import { InvoiceForm } from "./InvoiceForm";
 import { InvoicePDF } from "./InvoicePDF";
 import { StatusBadge } from "./StatusBadge";
 
+const SEARCH_PAGE_SIZE = 20;
+const DEFAULT_INVOICE_LIMIT = 20;
+
 function extractError(err: unknown, fallback: string): string {
   const axiosError = err as {
     response?: { data?: { error?: { message?: string }; detail?: string } };
+    message?: string;
   };
   return (
     axiosError.response?.data?.error?.message ||
     axiosError.response?.data?.detail ||
+    axiosError.message ||
     fallback
   );
 }
@@ -22,29 +33,66 @@ export function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-
-  async function load() {
-    setLoading(true);
-    try {
-      setInvoices(await listInvoices());
-      setError(null);
-    } catch (err: unknown) {
-      setError(extractError(err, "Failed to load invoices"));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [hasMoreSearchResults, setHasMoreSearchResults] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [showAllInvoices, setShowAllInvoices] = useState(false);
+  const hasActiveSearch = Boolean(searchTerm.trim());
+  const visibleInvoices =
+    !hasActiveSearch && !showAllInvoices
+      ? invoices.slice(0, DEFAULT_INVOICE_LIMIT)
+      : invoices;
 
   useEffect(() => {
-    load();
-  }, []);
+    let active = true;
+    const query = searchTerm.trim();
+    const timeoutId = window.setTimeout(() => {
+      async function load() {
+        setLoading(true);
+        setError(null);
+        try {
+          const results = query
+            ? await searchInvoices(query, searchOffset, SEARCH_PAGE_SIZE + 1)
+            : showAllInvoices
+              ? await listAllInvoices()
+              : await listInvoices(DEFAULT_INVOICE_LIMIT);
+          if (!active) return;
+          if (!Array.isArray(results)) {
+            throw new Error("The invoice service returned an invalid response.");
+          }
+          setHasMoreSearchResults(
+            Boolean(query) && results.length > SEARCH_PAGE_SIZE,
+          );
+          setInvoices(
+            query ? results.slice(0, SEARCH_PAGE_SIZE) : results,
+          );
+          setError(null);
+        } catch (err: unknown) {
+          if (active) {
+            setInvoices([]);
+            setError(extractError(err, "Failed to load invoices"));
+          }
+        } finally {
+          if (active) setLoading(false);
+        }
+      }
+      void load();
+    }, query ? 300 : 0);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchTerm, searchOffset, refreshKey, showAllInvoices]);
 
   async function handleApprove(inv: Invoice) {
     if (!confirm(`Approve ${inv.invoice_number}? Once approved, it can be sent, printed, and paid.`)) return;
     try {
       await approveInvoice(inv.id);
-      await load();
+      setRefreshKey((key) => key + 1);
     } catch (err: unknown) {
       setError(extractError(err, "Failed to approve invoice"));
     }
@@ -55,7 +103,19 @@ export function InvoicesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-sm text-gray-500">{invoices.length} total</p>
+          <p className="text-sm text-gray-500">
+            {hasActiveSearch
+              ? loading
+                ? "Searching..."
+                : invoices.length
+                  ? `Showing ${searchOffset + 1}-${searchOffset + invoices.length} matching invoices`
+                  : "0 matching invoices"
+              : loading
+                  ? "Loading invoices..."
+                  : showAllInvoices || invoices.length <= DEFAULT_INVOICE_LIMIT
+                    ? `${invoices.length} total`
+                    : `Showing ${DEFAULT_INVOICE_LIMIT} of ${invoices.length} invoices`}
+          </p>
         </div>
         {!showForm && (
           <button
@@ -70,25 +130,76 @@ export function InvoicesPage() {
       {showForm && (
         <div className="mb-6">
           <InvoiceForm
-            onCreated={() => {
+            onCreated={(message) => {
               setShowForm(false);
-              load();
+              if (message) {
+                setSearchTerm("");
+                setSearchOffset(0);
+                setShowAllInvoices(false);
+              }
+              setRefreshKey((key) => key + 1);
+              setNotice(message || null);
             }}
           />
         </div>
       )}
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
-          {error}
+        <div
+          role="alert"
+          className="mb-4 flex items-center justify-between gap-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700"
+        >
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setRefreshKey((key) => key + 1)}
+            className="shrink-0 font-medium underline hover:text-red-900"
+          >
+            Retry
+          </button>
         </div>
       )}
 
+      {notice && (
+        <div
+          role="status"
+          className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-800"
+        >
+          {notice}
+        </div>
+      )}
+
+      <div className="mb-4">
+        <label htmlFor="invoice-search" className="sr-only">
+          Search invoices
+        </label>
+        <input
+          id="invoice-search"
+          type="search"
+          value={searchTerm}
+          onChange={(event) => {
+            setSearchTerm(event.target.value);
+            setSearchOffset(0);
+            setHasMoreSearchResults(false);
+            setShowAllInvoices(false);
+            setLoading(true);
+          }}
+          placeholder="Search by invoice number, customer, or reference"
+          className="w-full max-w-lg rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
+
       {loading ? (
         <div className="text-gray-500">Loading...</div>
+      ) : error ? (
+        <div className="p-8 bg-white rounded-lg border border-gray-200 text-center text-gray-500">
+          Could not load invoices. Check your connection and retry.
+        </div>
       ) : invoices.length === 0 ? (
         <div className="p-8 bg-white rounded-lg border border-gray-200 text-center text-gray-500">
-          No invoices yet.
+          {searchTerm.trim()
+            ? "No invoices match your search."
+            : "No invoices yet."}
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -109,7 +220,7 @@ export function InvoicesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {invoices.map((inv) => {
+              {visibleInvoices.map((inv) => {
                 const outstanding = Number(inv.total) - Number(inv.amount_paid);
                 return (
                   <tr key={inv.id} className="hover:bg-gray-50">
@@ -186,7 +297,45 @@ export function InvoicesPage() {
           </div>
         </div>
       )}
+
+      {!hasActiveSearch &&
+        !loading &&
+        invoices.length > DEFAULT_INVOICE_LIMIT && (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowAllInvoices((showAll) => !showAll)}
+              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {showAllInvoices ? "Show latest 20" : "View all invoices"}
+            </button>
+          </div>
+        )}
+
+      {searchTerm.trim() && (
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setSearchOffset((offset) =>
+                Math.max(0, offset - SEARCH_PAGE_SIZE),
+              )
+            }
+            disabled={searchOffset === 0 || loading}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchOffset((offset) => offset + SEARCH_PAGE_SIZE)}
+            disabled={!hasMoreSearchResults || loading}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }
-

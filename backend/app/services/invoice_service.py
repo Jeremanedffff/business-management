@@ -6,7 +6,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.currency import Currency
 from app.models.customer import Customer
@@ -17,10 +17,11 @@ from app.models.payment import Payment
 from app.models.product import Product
 from app.models.status import Status
 from app.models.tenant import Tenant
+from app.models.tenant_setting import TenantSetting
 from app.models.user import User
 from app.models.tax_rate import TaxRate
 from app.schemas.invoice import InvoiceCreate, InvoiceUpdate
-from app.services.setting_service import get_tenant_setting, set_tenant_setting
+from app.services.setting_service import get_tenant_setting
 from app.services import audit_service
 
 INVOICE_AUDIT_FIELDS = [
@@ -36,6 +37,7 @@ def _get_setting_value(db: Session, tenant_id: UUID, key: str, default: str = ""
 
 
 def _next_invoice_number(db: Session, tenant_id: UUID) -> str:
+    db.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
     prefix = _get_setting_value(db, tenant_id, "invoice_prefix", "INV-")
     next_str = _get_setting_value(db, tenant_id, "invoice_next_number", "1")
     try:
@@ -46,12 +48,23 @@ def _next_invoice_number(db: Session, tenant_id: UUID) -> str:
 
 
 def _increment_invoice_counter(db: Session, tenant_id: UUID) -> None:
-    current = _get_setting_value(db, tenant_id, "invoice_next_number", "1")
+    setting = get_tenant_setting(db, tenant_id, "invoice_next_number")
+    current = setting.value if setting and setting.value is not None else "1"
     try:
         next_num = int(current) + 1
     except ValueError:
         next_num = 2
-    set_tenant_setting(db, tenant_id, "invoice_next_number", str(next_num))
+    if setting is None:
+        db.add(
+            TenantSetting(
+                tenant_id=tenant_id,
+                key="invoice_next_number",
+                value=str(next_num),
+                description="Next invoice number for this business",
+            )
+        )
+    else:
+        setting.value = str(next_num)
 
 
 def _default_currency(db: Session) -> Currency:
@@ -200,6 +213,7 @@ def create_invoice(db: Session, tenant_id: UUID, user_id: UUID, payload: Invoice
     invoice = Invoice(
         tenant_id=tenant_id,
         invoice_number=invoice_number,
+        document_type="FiscalInvoice",
         verify_token=uuid.uuid4(),
         reference=payload.reference,
         customer_id=payload.customer_id,
@@ -269,9 +283,18 @@ def _attach_status_info(db: Session, invoices: list[Invoice]) -> list[Invoice]:
 
 
 
-def search_invoices(db: Session, tenant_id: UUID, query: str, limit: int = 20) -> list[Invoice]:
+def search_invoices(
+    db: Session,
+    tenant_id: UUID,
+    query: str,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[Invoice]:
     """Search invoices by number, customer name, or reference."""
-    term = f"%{query.strip()}%"
+    normalized_query = query.strip()
+    if not normalized_query:
+        return []
+    term = f"%{normalized_query}%"
     stmt = (
         select(Invoice)
         .where(Invoice.tenant_id == tenant_id)
@@ -280,17 +303,27 @@ def search_invoices(db: Session, tenant_id: UUID, query: str, limit: int = 20) -
             | (Invoice.customer_name_snapshot.ilike(term))
             | (Invoice.reference.ilike(term))
         )
-        .order_by(Invoice.created_at.desc())
+        .options(selectinload(Invoice.items))
+        .order_by(Invoice.created_at.desc(), Invoice.id.desc())
         .limit(limit)
+        .offset(offset)
     )
     invoices = list(db.execute(stmt).scalars().all())
     return _attach_status_info(db, invoices)
 
-def list_invoices(db: Session, tenant_id: UUID) -> list[Invoice]:
+def list_invoices(
+    db: Session,
+    tenant_id: UUID,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[Invoice]:
     stmt = (
         select(Invoice)
         .where(Invoice.tenant_id == tenant_id)
-        .order_by(Invoice.created_at.desc())
+        .options(selectinload(Invoice.items))
+        .order_by(Invoice.created_at.desc(), Invoice.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
     invoices = list(db.execute(stmt).scalars().all())
     return _attach_status_info(db, invoices)

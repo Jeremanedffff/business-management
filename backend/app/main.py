@@ -3,13 +3,14 @@
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
 from app.core.logging import get_logger, setup_logging
+from app.services.audit_service import reset_request_context, set_request_context
 
 
 @asynccontextmanager
@@ -43,6 +44,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def capture_audit_request_context(request: Request, call_next):
+        ip_address = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent")
+        token = set_request_context(
+            ip_address,
+            user_agent[:500] if user_agent else None,
+        )
+        try:
+            return await call_next(request)
+        finally:
+            reset_request_context(token)
+
     # Error handlers
     register_error_handlers(app)
 
@@ -58,4 +72,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

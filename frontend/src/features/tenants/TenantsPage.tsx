@@ -358,6 +358,9 @@ export function TenantsPage() {
 
               <div className="border-t border-gray-200 pt-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Business Admin Account</h3>
+                <p className="mb-4 text-sm text-gray-600">
+                  The current calendar month will be opened as this business's first fiscal period.
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Admin Email *</label>

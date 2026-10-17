@@ -28,6 +28,12 @@ class Invoice(Base, TimestampMixin):
     )
 
     invoice_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    document_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="FiscalInvoice",
+        server_default="FiscalInvoice",
+    )
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Public verification token (used in QR code on the printed invoice)
@@ -115,4 +121,3 @@ class Invoice(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<Invoice {self.invoice_number} total={self.total}>"
-

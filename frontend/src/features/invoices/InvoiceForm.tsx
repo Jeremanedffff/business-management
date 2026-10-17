@@ -43,8 +43,21 @@ function newItem(): DraftItem {
 }
 
 interface InvoiceFormProps {
-  onCreated: () => void;
+  onCreated: (notice?: string) => void;
   initialInvoice?: Invoice;
+}
+
+function getRequestError(err: unknown, fallback: string): string {
+  const axiosError = err as {
+    response?: { data?: { error?: { message?: string }; detail?: string } };
+    message?: string;
+  };
+  return (
+    axiosError.response?.data?.error?.message ||
+    axiosError.response?.data?.detail ||
+    axiosError.message ||
+    fallback
+  );
 }
 
 export function InvoiceForm({ onCreated, initialInvoice }: InvoiceFormProps) {
@@ -216,13 +229,23 @@ export function InvoiceForm({ onCreated, initialInvoice }: InvoiceFormProps) {
           items: payloadItems,
         });
         if (submitMode === "approve") {
-          await approveInvoice(created.id);
+          try {
+            await approveInvoice(created.id);
+          } catch (approvalError: unknown) {
+            onCreated(
+              `Invoice ${created.invoice_number} was created and saved, but its approval could not be confirmed: ${getRequestError(approvalError, "Approval failed")}`,
+            );
+            return;
+          }
         }
+        onCreated(`Invoice ${created.invoice_number} was created successfully.`);
+        return;
       }
       onCreated();
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { error?: { message?: string } } } };
-      setError(axiosError.response?.data?.error?.message || `Failed to ${isEditMode ? "update" : "create"} invoice`);
+      setError(
+        getRequestError(err, `Failed to ${isEditMode ? "update" : "create"} invoice`),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -385,5 +408,3 @@ export function InvoiceForm({ onCreated, initialInvoice }: InvoiceFormProps) {
     </form>
   );
 }
-
-

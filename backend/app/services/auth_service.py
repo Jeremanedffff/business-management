@@ -100,6 +100,7 @@ def create_user(
     first_name: str | None = None,
     last_name: str | None = None,
     is_superuser: bool = False,
+    commit: bool = True,
 ) -> User:
     """Create a new user (used in seeding and admin flows)."""
     existing = get_user_by_email(db, email)
@@ -114,7 +115,9 @@ def create_user(
         is_superuser=is_superuser,
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    if commit:
+        db.commit()
+        db.refresh(user)
+    else:
+        db.flush()
     return user
-

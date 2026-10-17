@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps.database import get_db
@@ -25,19 +25,32 @@ router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 @router.get("/search", response_model=list[InvoiceResponse])
 def search_invoices(
-    q: str,
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(require_permission("invoice.view")),
     db: Session = Depends(get_db),
 ) -> list[Invoice]:
     """Search invoices by number, customer name, or reference."""
-    return invoice_service.search_invoices(db, current_user.tenant_id, q)
+    if not q.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Search query cannot be blank",
+        )
+    return invoice_service.search_invoices(
+        db, current_user.tenant_id, q, limit=limit, offset=offset
+    )
 
 @router.get("/", response_model=list[InvoiceResponse])
 def list_invoices(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(require_permission("invoice.view")),
     db: Session = Depends(get_db),
 ) -> list[Invoice]:
-    return invoice_service.list_invoices(db, current_user.tenant_id)
+    return invoice_service.list_invoices(
+        db, current_user.tenant_id, limit=limit, offset=offset
+    )
 
 
 @router.post("/", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)

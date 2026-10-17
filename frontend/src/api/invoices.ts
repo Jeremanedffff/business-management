@@ -35,6 +35,7 @@ export interface Invoice {
   id: string;
   tenant_id: string;
   invoice_number: string;
+  document_type: string;
   verify_token: string | null;
   reference: string | null;
   customer_id: string;
@@ -106,14 +107,34 @@ export interface StatusChange {
   status_code: string;
 }
 
-export async function listInvoices(): Promise<Invoice[]> {
-  const { data } = await apiClient.get<Invoice[]>("/invoices/");
+export async function listInvoices(
+  limit = 20,
+  offset = 0,
+): Promise<Invoice[]> {
+  const { data } = await apiClient.get<Invoice[]>("/invoices/", {
+    params: { limit, offset },
+  });
   return data;
 }
 
-export async function searchInvoices(query: string): Promise<Invoice[]> {
+export async function listAllInvoices(): Promise<Invoice[]> {
+  const pageSize = 100;
+  const invoices: Invoice[] = [];
+
+  while (true) {
+    const page = await listInvoices(pageSize, invoices.length);
+    invoices.push(...page);
+    if (page.length < pageSize) return invoices;
+  }
+}
+
+export async function searchInvoices(
+  query: string,
+  offset = 0,
+  limit = 20,
+): Promise<Invoice[]> {
   const { data } = await apiClient.get<Invoice[]>("/invoices/search", {
-    params: { q: query },
+    params: { q: query, offset, limit },
   });
   return data;
 }

@@ -7,6 +7,7 @@ Design:
 - snapshot() serializes a model instance into a JSON-safe dict.
 """
 
+from contextvars import ContextVar, Token
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -14,6 +15,19 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
+
+_request_context: ContextVar[tuple[str | None, str | None]] = ContextVar(
+    "audit_request_context",
+    default=(None, None),
+)
+
+
+def set_request_context(ip_address: str | None, user_agent: str | None) -> Token:
+    return _request_context.set((ip_address, user_agent))
+
+
+def reset_request_context(token: Token) -> None:
+    _request_context.reset(token)
 
 
 def log_action(
@@ -34,6 +48,7 @@ def log_action(
     inside the same transaction as the business operation so that a
     rolled-back operation leaves no audit trail.
     """
+    ip_address, user_agent = _request_context.get()
     entry = AuditLog(
         tenant_id=tenant_id,
         user_id=user_id,
@@ -43,6 +58,8 @@ def log_action(
         old_values=old_values,
         new_values=new_values,
         notes=notes,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
     db.add(entry)
     return entry

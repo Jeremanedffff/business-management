@@ -57,6 +57,20 @@ def create_method(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
 
 
+# ---------------------------------------------------------------------------
+# Any authenticated user - used by the invoice display
+# ---------------------------------------------------------------------------
+
+
+@router.get("/active", response_model=list[PaymentMethodResponse])
+def list_active(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[PaymentMethod]:
+    """Active payment methods for the current tenant - used on invoices."""
+    return payment_method_service.list_active_payment_methods(db, current_user.tenant_id)
+
+
 @router.get("/{method_id}", response_model=PaymentMethodResponse)
 def get_method(
     method_id: UUID,
@@ -106,17 +120,3 @@ def deactivate_method(
         payment_method_service.deactivate_payment_method(db, current_user.tenant_id, method_id)
     except PaymentMethodError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
-
-
-# ---------------------------------------------------------------------------
-# Any authenticated user - used by the invoice display
-# ---------------------------------------------------------------------------
-
-
-@router.get("/active", response_model=list[PaymentMethodResponse])
-def list_active(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> list[PaymentMethod]:
-    """Active payment methods for the current tenant - used on invoices."""
-    return payment_method_service.list_active_payment_methods(db, current_user.tenant_id)

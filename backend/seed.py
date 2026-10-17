@@ -3,16 +3,14 @@
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
-from app.models.currency import Currency
 from app.models.permission import Permission
 from app.models.role import Role
 from app.models.role_permission import RolePermission
-from app.models.status import Status
 from app.models.tenant import Tenant
-from app.models.tax_rate import TaxRate
 from app.models.user import User
 from app.models.user_role import UserRole
 from app.services.auth_service import create_user, get_user_by_email
+from app.services.tenant_service import initialize_tenant_defaults
 
 
 def seed() -> None:
@@ -40,37 +38,8 @@ def seed() -> None:
             db.refresh(tenant)
             print(f"Created tenant: {tenant.name} ({tenant.id})")
 
-        # --- Currencies ---
-        for c in [
-            {"code": "LSL", "name": "Lesotho Loti", "symbol": "M", "decimal_places": 2},
-            {"code": "ZAR", "name": "South African Rand", "symbol": "R", "decimal_places": 2},
-            {"code": "USD", "name": "US Dollar", "symbol": "$", "decimal_places": 2},
-        ]:
-            existing_cur = db.execute(select(Currency).where(Currency.code == c["code"])).scalar_one_or_none()
-            if not existing_cur:
-                db.add(Currency(**c))
+        initialize_tenant_defaults(db, tenant)
         db.commit()
-
-        # --- Tax Rates ---
-        existing_tax = db.execute(select(TaxRate).where(TaxRate.tenant_id == tenant.id)).first()
-        if not existing_tax:
-            db.add(TaxRate(tenant_id=tenant.id, code="VAT15", name="VAT 15%", rate=0.15, tax_type="VAT"))
-            db.add(TaxRate(tenant_id=tenant.id, code="VAT0", name="Zero Rated", rate=0.0, tax_type="ZERO_RATED"))
-            db.add(TaxRate(tenant_id=tenant.id, code="EXEMPT", name="Exempt", rate=0.0, tax_type="EXEMPT"))
-            db.commit()
-
-        # --- Invoice Statuses ---
-        existing_status = db.execute(select(Status).where(Status.tenant_id == tenant.id, Status.entity_type == "invoice")).first()
-        if not existing_status:
-            for s in [
-                {"code": "draft", "name": "Draft", "color": "gray", "sort_order": 10},
-                {"code": "sent", "name": "Sent", "color": "blue", "sort_order": 20},
-                {"code": "paid", "name": "Paid", "color": "green", "sort_order": 30},
-                {"code": "overdue", "name": "Overdue", "color": "red", "sort_order": 40},
-                {"code": "cancelled", "name": "Cancelled", "color": "gray", "sort_order": 50},
-            ]:
-                db.add(Status(tenant_id=tenant.id, entity_type="invoice", **s))
-            db.commit()
 
         # --- Permissions ---
         permission_specs = [
@@ -155,4 +124,3 @@ def seed() -> None:
 
 if __name__ == "__main__":
     seed()
-

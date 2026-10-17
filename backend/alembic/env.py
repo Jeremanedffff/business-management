@@ -38,6 +38,16 @@ config.set_main_option(
 target_metadata = Base.metadata
 
 
+def include_object(obj, name, type_, reflected, compare_to):
+    """Keep autogenerate scoped to tables owned by this application."""
+    table = obj if type_ == "table" else getattr(obj, "table", None)
+    if table is None and hasattr(obj, "parent"):
+        table = getattr(obj.parent, "table", None)
+    if reflected and table is not None and table.name not in target_metadata.tables:
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in offline mode."""
     url = config.get_main_option("sqlalchemy.url")
@@ -47,6 +57,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -66,6 +77,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_object=include_object,
         )
 
         with context.begin_transaction():
@@ -76,4 +88,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

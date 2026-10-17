@@ -77,6 +77,7 @@ class InvoiceResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     invoice_number: str
+    document_type: str
     reference: str | None
     verify_token: UUID | None
     customer_id: UUID
@@ -124,4 +125,3 @@ class InvoiceDetailResponse(InvoiceResponse):
 
 class StatusChangeRequest(BaseModel):
     status_code: str = Field(min_length=1, max_length=50)
-
